@@ -8,7 +8,9 @@ import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Paths;
 import java.util.Arrays;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 import org.apache.hc.client5.http.classic.methods.HttpGet;
 import org.apache.hc.client5.http.impl.classic.CloseableHttpClient;
@@ -19,19 +21,34 @@ import org.apache.hc.core5.http.io.entity.EntityUtils;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.opencsv.CSVParserBuilder;
 import com.opencsv.CSVReader;
-import com.opencsv.CSVWriter;
+import com.opencsv.CSVReaderBuilder;
+import com.opencsv.CSVWriterBuilder;
+import com.opencsv.ICSVWriter;
 import com.opencsv.exceptions.CsvException;
 
 public class TraductorCSV {
 
 	private static final String API_URL_TEMPLATE = "https://translate.google.es/translate_a/single?client=gtx&sl=es&tl=%s&dt=t&q=%s";
+	private static final Map<String, String> LANGUAGE_CODES;
 
-	public void traducirCSV(File inputFile, String[] columns, String targetLanguage) throws IOException, CsvException {
+	static {
+		LANGUAGE_CODES = new HashMap<>();
+		LANGUAGE_CODES.put("inglés", "en");
+		LANGUAGE_CODES.put("catalán", "ca");
+		LANGUAGE_CODES.put("español", "es");
+		LANGUAGE_CODES.put("euskera", "eu");
+	}
+
+	public void traducirCSV(File inputFile, String[] columns, String targetLanguage, char delimiter)
+			throws IOException, CsvException {
 		String translatedFileName = createTranslatedFileName(inputFile);
 
-		try (CSVReader reader = new CSVReader(new FileReader(inputFile));
-				CSVWriter writer = new CSVWriter(new FileWriter(translatedFileName))) {
+		try (CSVReader reader = new CSVReaderBuilder(new FileReader(inputFile))
+				.withCSVParser(new CSVParserBuilder().withSeparator(delimiter).build()).build();
+				ICSVWriter writer = new CSVWriterBuilder(new FileWriter(translatedFileName)).withSeparator(delimiter)
+						.build()) {
 
 			List<String[]> allRows = reader.readAll();
 			String[] header = allRows.get(0);
@@ -65,41 +82,35 @@ public class TraductorCSV {
 	}
 
 	private String translateText(String text, String targetLanguage) throws IOException {
-		CloseableHttpClient httpClient = HttpClients.createDefault();
-		String encodedText = URLEncoder.encode(text, StandardCharsets.UTF_8.toString());
-		String url = String.format(API_URL_TEMPLATE, getLanguageCode(targetLanguage), encodedText);
+		try (CloseableHttpClient httpClient = HttpClients.createDefault()) {
+			String encodedText = URLEncoder.encode(text, StandardCharsets.UTF_8.toString());
+			String url = String.format(API_URL_TEMPLATE, getLanguageCode(targetLanguage), encodedText);
 
-		HttpGet httpGet = new HttpGet(url);
-		try (CloseableHttpResponse response = httpClient.execute(httpGet)) {
-			int statusCode = response.getCode();
-			String responseString = EntityUtils.toString(response.getEntity());
+			HttpGet httpGet = new HttpGet(url);
+			try (CloseableHttpResponse response = httpClient.execute(httpGet)) {
+				int statusCode = response.getCode();
+				String responseString = EntityUtils.toString(response.getEntity());
 
-			if (statusCode != 200) {
-				throw new IOException("Error en la traducción: " + statusCode);
+				if (statusCode != 200) {
+					throw new IOException("Error en la traducción: " + statusCode);
+				}
+
+				ObjectMapper mapper = new ObjectMapper();
+				JsonNode rootNode = mapper.readTree(responseString);
+				return rootNode.get(0).get(0).get(0).asText();
+			} catch (ParseException e) {
+				e.printStackTrace();
+				throw new IOException("Error en la conexión o en la traducción", e);
 			}
-
-			ObjectMapper mapper = new ObjectMapper();
-			JsonNode rootNode = mapper.readTree(responseString);
-			return rootNode.get(0).get(0).get(0).asText();
-		} catch (ParseException e) {
-			e.printStackTrace();
-			throw new IOException("Error en la conexión o en la traducción", e);
 		}
 	}
 
 	private String getLanguageCode(String language) {
-		switch (language.toLowerCase()) {
-		case "inglés":
-			return "en";
-		case "catalán":
-			return "ca";
-		case "español":
-			return "es";
-		case "euskera":
-			return "eu";
-		default:
+		String code = LANGUAGE_CODES.get(language.toLowerCase());
+		if (code == null) {
 			throw new IllegalArgumentException("Idioma no soportado: " + language);
 		}
+		return code;
 	}
 
 	public String createTranslatedFileName(File inputFile) {

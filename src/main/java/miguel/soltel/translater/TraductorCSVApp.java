@@ -20,6 +20,7 @@ public class TraductorCSVApp extends JFrame {
 	private File selectedFile;
 	private JTextField txtColumns;
 	private JComboBox<String> cmbLanguage;
+	private JComboBox<Character> cmbDelimiter;
 	private JLabel lblFile;
 
 	public TraductorCSVApp() {
@@ -43,6 +44,9 @@ public class TraductorCSVApp extends JFrame {
 		JLabel lblLanguage = new JLabel("Selecciona el idioma de destino:");
 		cmbLanguage = new JComboBox<>(new String[] { "Inglés", "Catalán", "Español", "Euskera" });
 
+		JLabel lblDelimiter = new JLabel("Selecciona el delimitador:");
+		cmbDelimiter = new JComboBox<>(new Character[] { ',', '|', ';' });
+
 		JButton btnTranslate = new JButton("Traducir");
 		btnTranslate.addActionListener(this::translateFile);
 
@@ -53,6 +57,8 @@ public class TraductorCSVApp extends JFrame {
 		panel.add(txtColumns);
 		panel.add(lblLanguage);
 		panel.add(cmbLanguage);
+		panel.add(lblDelimiter);
+		panel.add(cmbDelimiter);
 		panel.add(btnTranslate);
 
 		add(panel);
@@ -69,12 +75,14 @@ public class TraductorCSVApp extends JFrame {
 	}
 
 	private void translateFile(ActionEvent e) {
-		if (selectedFile != null && !txtColumns.getText().isEmpty() && cmbLanguage.getSelectedItem() != null) {
+		if (selectedFile != null && !txtColumns.getText().isEmpty() && cmbLanguage.getSelectedItem() != null
+				&& cmbDelimiter.getSelectedItem() != null) {
 			String[] columns = txtColumns.getText().split(",");
 			String targetLanguage = (String) cmbLanguage.getSelectedItem();
+			char delimiter = (char) cmbDelimiter.getSelectedItem();
 			try {
 				TraductorCSV traducir = new TraductorCSV();
-				traducir.traducirCSV(selectedFile, columns, targetLanguage);
+				traducir.traducirCSV(selectedFile, columns, targetLanguage, delimiter);
 				JOptionPane.showMessageDialog(this,
 						"El archivo ha sido traducido correctamente y guardado como:\n"
 								+ traducir.createTranslatedFileName(selectedFile),
@@ -85,7 +93,8 @@ public class TraductorCSVApp extends JFrame {
 						JOptionPane.ERROR_MESSAGE);
 			}
 		} else {
-			JOptionPane.showMessageDialog(this, "Por favor, selecciona un archivo, columnas y un idioma.", "Error",
+			JOptionPane.showMessageDialog(this,
+					"Por favor, selecciona un archivo, columnas, un idioma y un delimitador.", "Error",
 					JOptionPane.ERROR_MESSAGE);
 		}
 	}
