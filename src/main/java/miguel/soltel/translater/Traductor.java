@@ -1,5 +1,6 @@
 package miguel.soltel.translater;
 
+import java.io.BufferedReader;
 import java.io.File;
 import java.io.FileReader;
 import java.io.FileWriter;
@@ -30,9 +31,9 @@ import com.opencsv.CSVWriterBuilder;
 import com.opencsv.ICSVWriter;
 import com.opencsv.exceptions.CsvException;
 
-public class TraductorCSV {
+public class Traductor {
 
-	private static final String API_URL_TEMPLATE = "https://translate.google.es/translate_a/single?client=gtx&sl=es&tl=%s&dt=t&q=%s";
+	private static final String API_URL_TEMPLATE = "https://translate.google.es/translate_a/single?client=gtx&sl=%s&tl=%s&dt=t&q=%s";
 	private static final Map<String, String> LANGUAGE_CODES;
 
 	static {
@@ -43,15 +44,12 @@ public class TraductorCSV {
 		LANGUAGE_CODES.put("euskera", "eu");
 	}
 
-	public void traducirCSV(File inputFile, String[] columns, String targetLanguage, char delimiter)
-			throws IOException, CsvException {
-		String translatedFileName = createTranslatedFileName(inputFile);
+	public void traducirCSV(File inputFile, String[] columns, String sourceLanguage, String targetLanguage,
+			char delimiter) throws IOException, CsvException {
+		String translatedFileName = createTranslatedFileName(inputFile, "CSV");
 
-		// Configura el parser para reconocer comillas dobles y manejar caracteres
-		// escapados.
 		CSVParser parser = new CSVParserBuilder().withSeparator(delimiter)
-				.withQuoteChar(CSVParser.DEFAULT_QUOTE_CHARACTER) // Configura para reconocer comillas dobles.
-				.withEscapeChar(CSVParser.DEFAULT_ESCAPE_CHARACTER) // Configura para manejar caracteres escapados.
+				.withQuoteChar(CSVParser.DEFAULT_QUOTE_CHARACTER).withEscapeChar(CSVParser.DEFAULT_ESCAPE_CHARACTER)
 				.build();
 
 		try (CSVReader reader = new CSVReaderBuilder(new FileReader(inputFile)).withCSVParser(parser).build();
@@ -68,7 +66,7 @@ public class TraductorCSV {
 				for (int columnIndex : columnIndexes) {
 					String originalText = row[columnIndex];
 					try {
-						String translatedText = translateText(originalText, targetLanguage);
+						String translatedText = translateText(originalText, sourceLanguage, targetLanguage);
 						row[columnIndex] = translatedText;
 					} catch (Exception e) {
 						row[columnIndex] = "Error al traducir";
@@ -80,11 +78,38 @@ public class TraductorCSV {
 		}
 	}
 
-	String createTranslatedFileName(File inputFile) {
+	public void traducirSQL(File inputFile, String[] fields, String sourceLanguage, String targetLanguage)
+			throws IOException {
+		String translatedFileName = createTranslatedFileName(inputFile, "SQL");
+
+		try (BufferedReader reader = new BufferedReader(new FileReader(inputFile));
+				FileWriter fileWriter = new FileWriter(translatedFileName)) {
+			String line;
+			while ((line = reader.readLine()) != null) {
+				for (String field : fields) {
+					if (line.contains(field + "=")) {
+						int startIndex = line.indexOf(field + "=") + field.length() + 2;
+						int endIndex = line.indexOf("'", startIndex);
+						String originalText = line.substring(startIndex, endIndex);
+						try {
+							String translatedText = translateText(originalText, sourceLanguage, targetLanguage);
+							line = line.substring(0, startIndex) + translatedText + line.substring(endIndex);
+						} catch (Exception e) {
+							line = line.substring(0, startIndex) + "Error al traducir" + line.substring(endIndex);
+							e.printStackTrace();
+						}
+					}
+				}
+				fileWriter.write(line + "\n");
+			}
+		}
+	}
+
+	String createTranslatedFileName(File inputFile, String fileType) {
 		String parentDir = inputFile.getParent();
 		String fileName = inputFile.getName();
 		String fileBaseName = fileName.substring(0, fileName.lastIndexOf('.'));
-		String translatedFileName = fileBaseName + "_translated.csv";
+		String translatedFileName = fileBaseName + "_translated." + fileType.toLowerCase();
 		return Paths.get(parentDir, translatedFileName).toString();
 	}
 
@@ -97,10 +122,11 @@ public class TraductorCSV {
 		throw new IllegalArgumentException("Columna no encontrada: " + columnName);
 	}
 
-	private String translateText(String text, String targetLanguage) throws IOException {
+	private String translateText(String text, String sourceLanguage, String targetLanguage) throws IOException {
 		try (CloseableHttpClient httpClient = HttpClients.createDefault()) {
 			String encodedText = URLEncoder.encode(text, StandardCharsets.UTF_8.toString());
-			String url = String.format(API_URL_TEMPLATE, getLanguageCode(targetLanguage), encodedText);
+			String url = String.format(API_URL_TEMPLATE, getLanguageCode(sourceLanguage),
+					getLanguageCode(targetLanguage), encodedText);
 
 			HttpGet httpGet = new HttpGet(url);
 			try (CloseableHttpResponse response = httpClient.execute(httpGet)) {
@@ -127,10 +153,6 @@ public class TraductorCSV {
 			throw new IllegalArgumentException("Idioma no soportado: " + language);
 		}
 		return code;
-	}
-
-	public static void main(String[] args) {
-		// Prueba tu método aquí
 	}
 
 	private static class CustomCSVWriter implements AutoCloseable {
